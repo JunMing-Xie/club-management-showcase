@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "useDefineForClassFields": true,
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "outDir": "dist/server",
+    "rootDir": "server",
+    "noEmit": false,
+    "sourceMap": true
+  },
+  "include": ["server/**/*.ts", "server/**/*.d.ts"],
+  "exclude": ["node_modules", "dist"]
+}

@@ -1,0 +1,750 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  STORE_MANAGER
+  CUSTOMER_SERVICE
+  DISPATCHER
+  FINANCE
+  STAFF
+  CUSTOM_ADMIN
+}
+
+enum StaffStatus {
+  IDLE
+  BUSY
+}
+
+enum StaffAccountStatus {
+  NORMAL
+  FROZEN
+  RETIRED
+}
+
+enum StaffPresence {
+  ONLINE
+  OFFLINE
+}
+
+enum StaffAccepting {
+  ACCEPTING
+  PAUSED
+}
+
+enum IdentityReviewStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum OrderStatus {
+  PENDING_PAYMENT
+  PENDING_ASSIGNMENT
+  PENDING
+  IN_PROGRESS
+  PENDING_COMPLETION_REVIEW
+  COMPLETED
+  AFTER_SALE
+  CANCELLED
+}
+
+enum OrderStaffAssignmentStatus {
+  OPEN
+  CLAIMED
+  ACTIVE
+  EXIT_REQUESTED
+  EXITED
+  COMPLETED
+}
+
+enum CompletionReviewStatus {
+  NOT_SUBMITTED
+  SUBMITTED
+  APPROVED
+  REJECTED
+}
+
+enum ExitReviewStatus {
+  NONE
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum FundTransactionType {
+  PRINCIPAL_RECHARGE
+  BONUS_RECHARGE
+  PRINCIPAL_CONSUMPTION
+  BONUS_CONSUMPTION
+  ADJUSTMENT
+  AFTER_SALE
+  ORDER_ADJUSTMENT
+}
+
+enum FundingPolicy {
+  PRINCIPAL_FIRST
+  BONUS_FIRST
+}
+
+enum StaffIncidentType {
+  BAD_REVIEW
+  ROLLOVER
+  COMPLAINT
+}
+
+enum AfterSaleStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+}
+
+enum AfterSaleResultType {
+  COMPENSATION
+  SUPPLEMENTARY_ORDER
+  REFUND
+}
+
+enum CouponType {
+  FIXED
+}
+
+enum CustomerCouponStatus {
+  ISSUED
+  USED
+  EXPIRED
+}
+
+enum ActivityType {
+  NEW_CUSTOMER
+  REFERRAL
+  OTHER
+}
+
+enum NoticeType {
+  ANNOUNCEMENT
+  RISK
+}
+
+model AdminRole {
+  id             String   @id @default(cuid()) @db.VarChar(191)
+  name           String   @unique @db.VarChar(40)
+  code           String   @unique @db.VarChar(64)
+  description    String?  @db.VarChar(500)
+  authorityLevel Int      @default(2)
+  isSystem       Boolean  @default(false)
+  isActive       Boolean  @default(true)
+  permissions    Json
+  createdBy      String   @db.VarChar(191)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  users          User[]
+
+  @@map("admin_roles")
+}
+
+model User {
+  id                    String                 @id @default(cuid())
+  username              String                 @unique @db.VarChar(64)
+  passwordHash          String                 @db.VarChar(255)
+  authVersion           Int                    @default(0)
+  role                  UserRole
+  adminRoleId           String?                @db.VarChar(191)
+  adminRole             AdminRole?             @relation(fields: [adminRoleId], references: [id], onDelete: Restrict)
+  isActive              Boolean                @default(true)
+  staffProfile          StaffProfile?
+  operationLogs         OperationLog[]
+  rechargeRecords       RechargeRecord[]
+  consumptionRecords    ConsumptionRecord[]
+  orderConsumptions     OrderConsumption[]
+  createdOrders         Order[]                @relation("OrderCreatedBy")
+  lockedOrders          Order[]                @relation("OrderLockedBy")
+  reviewedStaffProfiles StaffProfile[]         @relation("StaffIdentityReviewer")
+  staffIncidents        StaffIncident[]        @relation("StaffIncidentOperator")
+  settlements           SettlementRecord[]     @relation("SettlementOperator")
+  fundTransactions      FundTransaction[]      @relation("FundOperator")
+  createdAfterSales     AfterSaleCase[]        @relation("AfterSaleCreatedBy")
+  handledAfterSales     AfterSaleCase[]        @relation("AfterSaleHandler")
+  afterSaleMessages     AfterSaleMessage[]
+  createdTiers          StaffTier[]            @relation("TierCreatedBy")
+  createdPackages       ServicePackage[]       @relation("PackageCreatedBy")
+  createdActivities     RechargeActivity[]     @relation("RechargeActivityCreatedBy")
+  createdCoupons        Coupon[]               @relation("CouponCreatedBy")
+  issuedCoupons         CustomerCoupon[]       @relation("CouponIssuedBy")
+  createdCampaigns      MarketingActivity[]    @relation("CampaignCreatedBy")
+  createdNotices        Notice[]               @relation("NoticeCreatedBy")
+  updatedSettings       SystemSetting[]        @relation("SettingUpdatedBy")
+  reviewedOrders        Order[]                @relation("OrderCompletionReviewer")
+  reviewedExits         OrderStaffAssignment[] @relation("AssignmentExitReviewer")
+  orderAdjustments      OrderAdjustment[]       @relation("OrderAdjustmentOperator")
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+
+  @@index([adminRoleId])
+  @@map("users")
+}
+
+model StaffTier {
+  id                 String         @id @default(cuid())
+  name               String         @db.VarChar(64)
+  description        String?        @db.Text
+  level              Int            @default(1)
+  priceMultiplierBps Int            @default(10000)
+  canAcceptOrders    Boolean        @default(true)
+  isEnabled          Boolean        @default(true)
+  sort               Int            @default(0)
+  remark             String?        @db.Text
+  archivedAt         DateTime?
+  createdById        String?
+  createdBy          User?          @relation("TierCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  staffProfiles      StaffProfile[] @relation("StaffTierMembers")
+  requiredOrders     Order[]        @relation("OrderRequiredTier")
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  @@index([isEnabled, sort])
+  @@map("staff_tiers")
+}
+
+model StaffProfile {
+  id                   String                 @id @default(cuid())
+  userId               String                 @unique
+  name                 String                 @db.VarChar(64)
+  phone                String?                @db.VarChar(32)
+  contact              String?                @db.VarChar(128)
+  status               StaffStatus            @default(IDLE)
+  accountStatus        StaffAccountStatus     @default(NORMAL)
+  presence             StaffPresence          @default(OFFLINE)
+  accepting            StaffAccepting         @default(ACCEPTING)
+  selfAccepting        StaffAccepting         @default(ACCEPTING)
+  commissionRateBps    Int                    @default(3000)
+  realName             String?                @db.VarChar(64)
+  idNumberMasked       String?                @db.VarChar(32)
+  idNumberEncrypted    String?                @db.VarChar(255)
+  identityStatus       IdentityReviewStatus   @default(PENDING)
+  identityReviewedAt   DateTime?
+  identityReviewedById String?
+  identityReviewNote   String?                @db.Text
+  note                 String?                @db.Text
+  tierId               String?
+  user                 User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tier                 StaffTier?             @relation("StaffTierMembers", fields: [tierId], references: [id], onDelete: SetNull)
+  identityReviewedBy   User?                  @relation("StaffIdentityReviewer", fields: [identityReviewedById], references: [id], onDelete: SetNull)
+  orders               Order[]
+  incidents            StaffIncident[]
+  afterSaleCases       AfterSaleCase[]
+  settlements          SettlementRecord[]
+  orderAssignments     OrderStaffAssignment[]
+  completionProofs     OrderCompletionProof[]
+  earningAdjustments   StaffEarningAdjustment[]
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+
+  @@index([status])
+  @@index([accountStatus])
+  @@index([presence, accepting])
+  @@map("staff_profiles")
+}
+
+model Customer {
+  id                    String              @id @default(cuid())
+  name                  String              @db.VarChar(128)
+  phone                 String?             @unique @db.VarChar(32)
+  customerCode          String              @unique @db.VarChar(128)
+  teamCode              String              @db.VarChar(128)
+  balanceCents          Int                 @default(0)
+  principalBalanceCents Int                 @default(0)
+  bonusBalanceCents     Int                 @default(0)
+  fundingPolicy         FundingPolicy       @default(PRINCIPAL_FIRST)
+  isBlacklisted         Boolean             @default(false)
+  tags                  String?             @db.Text
+  note                  String?             @db.Text
+  orders                Order[]
+  rechargeRecords       RechargeRecord[]
+  consumptionRecords    ConsumptionRecord[]
+  fundTransactions      FundTransaction[]
+  orderConsumptions     OrderConsumption[]
+  afterSaleCases        AfterSaleCase[]
+  customerCoupons       CustomerCoupon[]
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+
+  @@index([name])
+  @@index([isBlacklisted])
+  @@map("customers")
+}
+
+model ServicePackage {
+  id             String   @id @default(cuid())
+  name           String   @db.VarChar(128)
+  category       String?  @db.VarChar(64)
+  description    String?  @db.Text
+  basePriceCents Int      @default(0)
+  isEnabled      Boolean  @default(true)
+  sort           Int      @default(0)
+  note           String?  @db.Text
+  createdById    String?
+  createdBy      User?    @relation("PackageCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  orders         Order[]
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([isEnabled, sort])
+  @@map("service_packages")
+}
+
+model Order {
+  id                     String                 @id @default(cuid())
+  orderNo                String                 @unique @db.VarChar(40)
+  customerId             String
+  staffId                String?
+  servicePackageId       String?
+  requiredTierId         String?
+  customerCouponId       String?
+  createdById            String?
+  lockedById             String?
+  serviceItem            String                 @db.VarChar(160)
+  originalAmountCents    Int                    @default(0)
+  discountAmountCents    Int                    @default(0)
+  amountCents            Int
+  staffAmountCents       Int
+  requiredStaffCount     Int                    @default(1)
+  status                 OrderStatus            @default(PENDING_ASSIGNMENT)
+  completionReviewStatus CompletionReviewStatus @default(NOT_SUBMITTED)
+  completionReviewReason String?                @db.Text
+  completionSubmittedAt  DateTime?
+  completionReviewedAt   DateTime?
+  completionReviewedById String?
+  note                   String?                @db.Text
+  isLocked               Boolean                @default(false)
+  lockedAt               DateTime?
+  assignedAt             DateTime?
+  startedAt              DateTime?
+  completedAt            DateTime?
+  afterSaleAt            DateTime?
+  cancelledAt            DateTime?
+  consumptionRecord      ConsumptionRecord?
+  orderConsumption       OrderConsumption?
+  afterSaleCase          AfterSaleCase?
+  supplementaryCase      AfterSaleCase?         @relation("AfterSaleSupplementaryOrder")
+  customer               Customer               @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  staff                  StaffProfile?          @relation(fields: [staffId], references: [id], onDelete: SetNull)
+  servicePackage         ServicePackage?        @relation(fields: [servicePackageId], references: [id], onDelete: SetNull)
+  requiredTier           StaffTier?             @relation("OrderRequiredTier", fields: [requiredTierId], references: [id], onDelete: SetNull)
+  customerCoupon         CustomerCoupon?        @relation("OrderCustomerCoupon", fields: [customerCouponId], references: [id], onDelete: SetNull)
+  createdBy              User?                  @relation("OrderCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  lockedBy               User?                  @relation("OrderLockedBy", fields: [lockedById], references: [id], onDelete: SetNull)
+  completionReviewedBy   User?                  @relation("OrderCompletionReviewer", fields: [completionReviewedById], references: [id], onDelete: SetNull)
+  assignments            OrderStaffAssignment[]
+  completionProofs       OrderCompletionProof[]
+  fundTransactions       FundTransaction[]
+  adjustments            OrderAdjustment[]
+  createdAt              DateTime               @default(now())
+  updatedAt              DateTime               @updatedAt
+
+  @@index([status])
+  @@index([createdAt])
+  @@index([staffId, status])
+  @@index([customerId, createdAt])
+  @@index([isLocked, status])
+  @@index([completionReviewStatus, status])
+  @@map("orders")
+}
+
+model OrderStaffAssignment {
+  id                     String                     @id @default(cuid())
+  orderId                String
+  staffId                String?
+  slotIndex              Int
+  commissionRateBps      Int
+  expectedEarningCents   Int
+  actualEarningCents     Int                        @default(0)
+  assignmentStatus       OrderStaffAssignmentStatus @default(OPEN)
+  claimedAt              DateTime?
+  completedAt            DateTime?
+  exitedAt               DateTime?
+  startedAt              DateTime?
+  completionSubmittedAt  DateTime?
+  completionReviewStatus CompletionReviewStatus     @default(NOT_SUBMITTED)
+  completionReviewReason String?                    @db.Text
+  exitReviewStatus       ExitReviewStatus           @default(NONE)
+  exitRequestedAt        DateTime?
+  exitReason             String?                    @db.Text
+  exitReviewedAt         DateTime?
+  exitReviewNote         String?                    @db.Text
+  exitReviewedById       String?
+  order                  Order                      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  staff                  StaffProfile?              @relation(fields: [staffId], references: [id], onDelete: SetNull)
+  exitReviewedBy         User?                      @relation("AssignmentExitReviewer", fields: [exitReviewedById], references: [id], onDelete: SetNull)
+  completionProofs       OrderCompletionProof[]
+  earningAdjustments     StaffEarningAdjustment[]
+  createdAt              DateTime                   @default(now())
+  updatedAt              DateTime                   @updatedAt
+
+  @@index([orderId, assignmentStatus])
+  @@index([staffId, assignmentStatus])
+  @@index([orderId, slotIndex, createdAt])
+  @@index([exitReviewStatus, createdAt])
+  @@map("order_staff_assignments")
+}
+
+model OrderCompletionProof {
+  id           String                 @id @default(cuid())
+  assignmentId String
+  orderId      String
+  staffId      String
+  proofPath    String                 @db.VarChar(500)
+  mimeType     String                 @db.VarChar(80)
+  sizeBytes    Int
+  note         String?                @db.Text
+  submittedAt  DateTime               @default(now())
+  reviewStatus CompletionReviewStatus @default(SUBMITTED)
+  assignment   OrderStaffAssignment   @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  order        Order                  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  staff        StaffProfile           @relation(fields: [staffId], references: [id], onDelete: Restrict)
+  createdAt    DateTime               @default(now())
+  updatedAt    DateTime               @updatedAt
+
+  @@index([assignmentId, submittedAt])
+  @@index([orderId, reviewStatus])
+  @@index([staffId, submittedAt])
+  @@map("order_completion_proofs")
+}
+
+model RechargeRecord {
+  id                   String   @id @default(cuid())
+  customerId           String
+  operatorId           String
+  amountCents          Int
+  principalAmountCents Int      @default(0)
+  bonusAmountCents     Int      @default(0)
+  note                 String?  @db.Text
+  customer             Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  operator             User     @relation(fields: [operatorId], references: [id], onDelete: Restrict)
+  createdAt            DateTime @default(now())
+
+  @@index([customerId, createdAt])
+  @@map("recharge_records")
+}
+
+model ConsumptionRecord {
+  id                 String   @id @default(cuid())
+  customerId         String
+  orderId            String   @unique
+  operatorId         String
+  amountCents        Int
+  balanceBeforeCents Int
+  balanceAfterCents  Int
+  note               String?  @db.Text
+  customer           Customer @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  order              Order    @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  operator           User     @relation(fields: [operatorId], references: [id], onDelete: Restrict)
+  createdAt          DateTime @default(now())
+
+  @@index([customerId, createdAt])
+  @@map("consumption_records")
+}
+
+model OrderConsumption {
+  id                   String   @id @default(cuid())
+  orderId              String   @unique
+  customerId           String
+  operatorId           String
+  totalAmountCents     Int
+  principalUsedCents   Int      @default(0)
+  bonusUsedCents       Int      @default(0)
+  principalBeforeCents Int
+  principalAfterCents  Int
+  bonusBeforeCents     Int
+  bonusAfterCents      Int
+  order                Order    @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  customer             Customer @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  operator             User     @relation(fields: [operatorId], references: [id], onDelete: Restrict)
+  createdAt            DateTime @default(now())
+
+  @@index([customerId, createdAt])
+  @@map("order_consumptions")
+}
+
+model FundTransaction {
+  id                   String              @id @default(cuid())
+  customerId           String
+  operatorId           String?
+  orderId              String?
+  afterSaleCaseId      String?
+  type                 FundTransactionType
+  amountCents          Int
+  principalBeforeCents Int
+  principalAfterCents  Int
+  bonusBeforeCents     Int
+  bonusAfterCents      Int
+  balanceBeforeCents   Int
+  balanceAfterCents    Int
+  note                 String?             @db.Text
+  customer             Customer            @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  operator             User?               @relation("FundOperator", fields: [operatorId], references: [id], onDelete: SetNull)
+  order                Order?              @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  afterSaleCase        AfterSaleCase?      @relation(fields: [afterSaleCaseId], references: [id], onDelete: SetNull)
+  createdAt            DateTime            @default(now())
+
+  @@index([customerId, createdAt])
+  @@index([type, createdAt])
+  @@index([orderId])
+  @@map("fund_transactions")
+}
+
+model StaffIncident {
+  id         String            @id @default(cuid())
+  staffId    String
+  operatorId String
+  type       StaffIncidentType
+  note       String            @db.Text
+  staff      StaffProfile      @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  operator   User              @relation("StaffIncidentOperator", fields: [operatorId], references: [id], onDelete: Restrict)
+  createdAt  DateTime          @default(now())
+
+  @@index([staffId, createdAt])
+  @@map("staff_incidents")
+}
+
+model SettlementRecord {
+  id               String       @id @default(cuid())
+  requestId        String       @unique @db.VarChar(64)
+  staffId          String
+  operatorId       String
+  amountCents      Int
+  settlementMethod String       @db.VarChar(64)
+  settledAt        DateTime
+  note             String?      @db.Text
+  staff            StaffProfile @relation(fields: [staffId], references: [id], onDelete: Restrict)
+  operator         User         @relation("SettlementOperator", fields: [operatorId], references: [id], onDelete: Restrict)
+  createdAt        DateTime     @default(now())
+
+  @@index([staffId, createdAt])
+  @@index([settledAt])
+  @@map("settlement_records")
+}
+
+model OrderAdjustment {
+  id                     String                   @id @default(cuid())
+  requestId              String                   @unique @db.VarChar(64)
+  orderId                String
+  afterSaleId            String?
+  operatorId             String
+  reason                 String                   @db.VarChar(255)
+  handlingNote           String?                  @db.Text
+  orderAmountBeforeCents Int
+  orderAmountDeltaCents  Int
+  orderAmountAfterCents  Int
+  order                  Order                    @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  afterSale              AfterSaleCase?           @relation(fields: [afterSaleId], references: [id], onDelete: SetNull)
+  operator               User                     @relation("OrderAdjustmentOperator", fields: [operatorId], references: [id], onDelete: Restrict)
+  staffAdjustments       StaffEarningAdjustment[]
+  createdAt              DateTime                 @default(now())
+
+  @@index([orderId, createdAt])
+  @@index([afterSaleId, createdAt])
+  @@index([createdAt])
+  @@map("order_adjustments")
+}
+
+model StaffEarningAdjustment {
+  id                    String               @id @default(cuid())
+  orderAdjustmentId     String
+  assignmentId          String
+  staffId               String
+  earningBeforeCents    Int
+  earningDeltaCents     Int
+  earningAfterCents     Int
+  orderAdjustment       OrderAdjustment      @relation(fields: [orderAdjustmentId], references: [id], onDelete: Cascade)
+  assignment            OrderStaffAssignment @relation(fields: [assignmentId], references: [id], onDelete: Restrict)
+  staff                 StaffProfile         @relation(fields: [staffId], references: [id], onDelete: Restrict)
+  createdAt             DateTime             @default(now())
+
+  @@unique([orderAdjustmentId, assignmentId])
+  @@index([staffId, createdAt])
+  @@index([assignmentId, createdAt])
+  @@map("staff_earning_adjustments")
+}
+
+model RechargeActivity {
+  id          String                 @id @default(cuid())
+  name        String                 @db.VarChar(128)
+  startAt     DateTime
+  endAt       DateTime
+  isEnabled   Boolean                @default(true)
+  note        String?                @db.Text
+  createdById String?
+  createdBy   User?                  @relation("RechargeActivityCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  tiers       RechargeActivityTier[]
+  createdAt   DateTime               @default(now())
+  updatedAt   DateTime               @updatedAt
+
+  @@index([isEnabled, startAt, endAt])
+  @@map("recharge_activities")
+}
+
+model RechargeActivityTier {
+  id             String           @id @default(cuid())
+  activityId     String
+  thresholdCents Int
+  bonusCents     Int
+  activity       RechargeActivity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+
+  @@unique([activityId, thresholdCents])
+  @@index([activityId, thresholdCents])
+  @@map("recharge_activity_tiers")
+}
+
+model AfterSaleCase {
+  id                   String               @id @default(cuid())
+  caseNo               String               @unique @db.VarChar(40)
+  orderId              String               @unique
+  customerId           String
+  staffId              String?
+  createdById          String
+  handlerId            String?
+  supplementaryOrderId String?              @unique
+  issueType            String               @db.VarChar(64)
+  description          String               @db.Text
+  status               AfterSaleStatus      @default(PENDING)
+  resultType           AfterSaleResultType?
+  compensationCents    Int                  @default(0)
+  refundCents          Int                  @default(0)
+  handlingNote         String?              @db.Text
+  handledAt            DateTime?
+  order                Order                @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  supplementaryOrder   Order?               @relation("AfterSaleSupplementaryOrder", fields: [supplementaryOrderId], references: [id], onDelete: SetNull)
+  customer             Customer             @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  staff                StaffProfile?        @relation(fields: [staffId], references: [id], onDelete: SetNull)
+  createdBy            User                 @relation("AfterSaleCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  handler              User?                @relation("AfterSaleHandler", fields: [handlerId], references: [id], onDelete: SetNull)
+  messages             AfterSaleMessage[]
+  fundTransactions     FundTransaction[]
+  orderAdjustments     OrderAdjustment[]
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+
+  @@index([status, createdAt])
+  @@index([customerId, createdAt])
+  @@index([staffId, status])
+  @@map("after_sale_cases")
+}
+
+model AfterSaleMessage {
+  id        String        @id @default(cuid())
+  caseId    String
+  authorId  String
+  content   String        @db.Text
+  case      AfterSaleCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  author    User          @relation(fields: [authorId], references: [id], onDelete: Restrict)
+  createdAt DateTime      @default(now())
+
+  @@index([caseId, createdAt])
+  @@map("after_sale_messages")
+}
+
+model Coupon {
+  id              String           @id @default(cuid())
+  name            String           @db.VarChar(128)
+  type            CouponType       @default(FIXED)
+  amountCents     Int              @default(0)
+  minSpendCents   Int              @default(0)
+  startAt         DateTime
+  endAt           DateTime
+  isEnabled       Boolean          @default(true)
+  note            String?          @db.Text
+  createdById     String?
+  createdBy       User?            @relation("CouponCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  customerCoupons CustomerCoupon[]
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@index([isEnabled, startAt, endAt])
+  @@map("coupons")
+}
+
+model CustomerCoupon {
+  id          String               @id @default(cuid())
+  couponId    String
+  customerId  String
+  issuedById  String?
+  usedOrderId String?              @unique
+  status      CustomerCouponStatus @default(ISSUED)
+  issuedAt    DateTime             @default(now())
+  usedAt      DateTime?
+  coupon      Coupon               @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  customer    Customer             @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  issuedBy    User?                @relation("CouponIssuedBy", fields: [issuedById], references: [id], onDelete: SetNull)
+  orders      Order[]              @relation("OrderCustomerCoupon")
+
+  @@index([customerId, status])
+  @@index([couponId, status])
+  @@map("customer_coupons")
+}
+
+model MarketingActivity {
+  id          String       @id @default(cuid())
+  name        String       @db.VarChar(128)
+  type        ActivityType
+  rule        Json?
+  startAt     DateTime
+  endAt       DateTime
+  isEnabled   Boolean      @default(true)
+  note        String?      @db.Text
+  createdById String?
+  createdBy   User?        @relation("CampaignCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@index([type, isEnabled, startAt, endAt])
+  @@map("marketing_activities")
+}
+
+model Notice {
+  id          String     @id @default(cuid())
+  type        NoticeType
+  title       String     @db.VarChar(160)
+  content     String     @db.Text
+  isEnabled   Boolean    @default(true)
+  createdById String?
+  createdBy   User?      @relation("NoticeCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@index([type, isEnabled, createdAt])
+  @@map("notices")
+}
+
+model SystemSetting {
+  id          String   @id @default(cuid())
+  key         String   @unique @db.VarChar(128)
+  value       String   @db.Text
+  updatedById String?
+  updatedBy   User?    @relation("SettingUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("system_settings")
+}
+
+model OperationLog {
+  id         String   @id @default(cuid())
+  operatorId String?
+  action     String   @db.VarChar(64)
+  entityType String   @db.VarChar(64)
+  entityId   String?  @db.VarChar(64)
+  detail     Json?
+  operator   User?    @relation(fields: [operatorId], references: [id], onDelete: SetNull)
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@map("operation_logs")
+}
